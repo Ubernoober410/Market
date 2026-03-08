@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Survive the Hitman</title>
+<style>
+  body { font-family: Arial, sans-serif; background: #111; color: #eee; padding: 20px; }
+  button { margin: 5px; padding: 10px; }
+  #log { border: 1px solid #555; padding: 10px; height: 300px; overflow-y: scroll; background: #222; }
+  #status { margin-bottom: 10px; }
+</style>
+</head>
+<body>
+
+<h1>Survive the Hitman</h1>
+<div id="status"></div>
+<div>
+  <button onclick="moveLocation()">Move</button>
+  <button onclick="buyDefense()">Buy Defense</button>
+  <button onclick="layLow()">Lay Low</button>
+  <button onclick="scavenge()">Scavenge</button>
+  <button onclick="buyInfo()">Buy Info</button>
+  <button onclick="checkStatus()">Check Status</button>
+</div>
+<h2>Log:</h2>
+<div id="log"></div>
+
+<script>
+const TOTAL_HOURS = 24;
+let player = {
+    health: 100,
+    money: 350000,
+    threat: 50,
+    hour: 0,
+    location: "Apartment",
+    inventory: [],
+    alive: true
+};
+
+function log(msg) {
+    const logDiv = document.getElementById("log");
+    logDiv.innerHTML += msg + "<br>";
+    logDiv.scrollTop = logDiv.scrollHeight;
+}
+
+function updateStatus() {
+    const s = document.getElementById("status");
+    s.innerHTML = `Hour: ${player.hour}/${TOTAL_HOURS} | Health: ${player.health} | Money: $${player.money.toLocaleString()} | Threat: ${player.threat} | Location: ${player.location}<br>Inventory: ${player.inventory.join(", ") || "(empty)"}`;
+}
+
+function advanceTime(hours=1) {
+    player.hour += hours;
+    player.threat = Math.min(100, player.threat + Math.floor(Math.random()*6)*hours);
+}
+
+function checkGameOver() {
+    if(player.health <= 0) { player.alive = false; return true; }
+    if(player.hour >= TOTAL_HOURS) return true;
+    return false;
+}
+
+function randomEvent() {
+    let r = Math.random();
+    if(r < 0.10) witnessEvent();
+    else if(r < 0.20) supplyEvent();
+    else if(r < 0.32) ambushEvent();
+}
+
+function witnessEvent() {
+    let quality = ["bad","neutral","useful"][Math.floor(Math.random()*3)];
+    if(quality=="bad") { log("A neighbor saw suspicious activity. Threat increases."); player.threat = Math.min(100, player.threat+10); }
+    else if(quality=="neutral") { log("Neighbor saw something odd but nothing solid."); player.threat = Math.min(100, player.threat+3); }
+    else { log("Neighbor noticed a suspicious car. Could be useful."); if(!player.inventory.includes("plate_clue")) player.inventory.push("plate_clue"); }
+}
+
+function supplyEvent() {
+    let items = [
+        {name:"Crowd camera footage", price:5000, tag:"video"},
+        {name:"Extra cash", price:8000, tag:"stash"},
+        {name:"Two-way radio", price:6000, tag:"radio"}
+    ];
+    let item = items[Math.floor(Math.random()*items.length)];
+    if(confirm(`Found: ${item.name} for $${item.price}. Buy?`)) {
+        if(player.money >= item.price) { player.money -= item.price; player.inventory.push(item.tag); log(`Purchased ${item.name}.`); }
+        else log("Not enough money.");
+    } else log("Declined.");
+}
+
+function ambushEvent() {
+    let chance = player.threat / 300;
+    if(Math.random() < chance) {
+        log("Ambush! Something moves in the shadows!");
+        if(player.inventory.includes("bodyguard")) { log("Bodyguard intervenes. Minor injury."); player.health -= Math.floor(Math.random()*10); player.inventory.splice(player.inventory.indexOf("bodyguard"),1); player.threat = Math.max(0,player.threat-20); }
+        else if(player.inventory.includes("safehouse") && player.location=="Safehouse") { log("Safe in your safehouse. Ambush fails."); player.threat = Math.max(0,player.threat-15); }
+        else { let damage = Math.floor(Math.random()*(60-20+1))+20; log(`You are attacked! Lose ${damage} health.`); player.health -= damage; player.threat = Math.min(100,player.threat+10); }
+    } else log("Tension in area, but nothing happens.");
+}
+
+function hitmanProgress() {
+    let detection = Math.random() + (player.threat/100);
+    if(player.inventory.includes("disguise")) detection -= 0.4;
+    if(player.inventory.includes("relocation") && player.hour <=8) detection -= 0.8;
+    if(detection > 1.1) {
+        if(Math.random()<0.35) attemptAssassination();
+        else { log("You notice subtle signs someone is watching you."); player.threat = Math.min(100, player.threat + Math.floor(Math.random()*8)+1); }
+    }
+}
+
+function attemptAssassination() {
+    log("The hitman attacks!");
+    let survival = 0.3 + (player.health/400);
+    if(player.inventory.includes("bodyguard")) survival += 0.25;
+    if(player.inventory.includes("disguise")) survival += 0.10;
+    if(player.inventory.includes("safehouse") && player.location=="Safehouse") survival +=0.20;
+    survival = Math.min(0.95, survival);
+    if(Math.random() < survival) {
+        let damage = Math.floor(Math.random()*(45-10+1))+10;
+        player.health -= damage;
+        log(`You survive but take ${damage} damage.`);
+        if(player.inventory.includes("bodyguard")) player.inventory.splice(player.inventory.indexOf("bodyguard"),1);
+        player.threat = Math.max(0, player.threat-10);
+    } else {
+        player.health = 0; player.alive=false;
+        log("The hitman succeeds. You were killed.");
+    }
+}
+
+// ---------- ACTIONS ----------
+function moveLocation() {
+    let locs = ["Apartment","Safehouse","Hotel","Bus station","Airport","Alley","Downtown cafe"];
+    let choice = prompt("Choose location:\n"+locs.map((l,i)=>`${i+1}. ${l}`).join("\n"));
+    let idx = parseInt(choice)-1;
+    if(idx>=0 && idx<locs.length) {
+        let newloc = locs[idx];
+        let cost = 0;
+        if(newloc=="Airport"||newloc=="Bus station") cost=200;
+        else if(newloc=="Hotel") cost=5000;
+        else if(newloc=="Safehouse" && player.inventory.includes("safehouse")) cost=0;
+        player.money -= cost;
+        player.location = newloc;
+        log(`Moved to ${newloc}. Cost: $${cost}.`);
+        if(["Bus station","Airport","Downtown cafe"].includes(newloc)) player.threat = Math.min(100, player.threat + Math.floor(Math.random()*7)+2);
+        advanceTime(1); randomEvent(); hitmanProgress(); updateStatus(); checkEnd();
+    } else log("Invalid location.");
+}
+
+function buyDefense() {
+    let options = [
+        {name:"Safehouse (4h)", price:50000, tag:"safehouse"},
+        {name:"Disguise", price:25000, tag:"disguise"},
+        {name:"Bodyguard", price:75000, tag:"bodyguard"},
+        {name:"Relocation (8h)", price:120000, tag:"relocation"},
+        {name:"Bribe informant", price:15000, tag:"informant"}
+    ];
+    let choice = prompt("Buy:\n"+options.map((o,i)=>`${i+1}. ${o.name} - $${o.price}`).join("\n"));
+    let idx = parseInt(choice)-1;
+    if(idx>=0 && idx<options.length) {
+        let o = options[idx];
+        if(player.money>=o.price) { player.money-=o.price; player.inventory.push(o.tag); log(`Purchased ${o.name}.`); }
+        else log("Not enough money.");
+        advanceTime(1); randomEvent(); hitmanProgress(); updateStatus(); checkEnd();
+    }
+}
+
+function layLow() {
+    if(player.inventory.includes("safehouse") || player.location=="Safehouse") { 
+        let heal = Math.floor(Math.random()*(20-8+1))+8;
+        player.health = Math.min(100, player.health+heal);
+        player.threat = Math.max(0, player.threat - (Math.floor(Math.random()*8)+5));
+        log(`Rested in safehouse. Health +${heal}. Threat reduced.`); 
+    } else {
+        let heal = Math.floor(Math.random()*(6-2+1))+2;
+        player.health = Math.min(100, player.health+heal);
+        player.threat = Math.max(0, player.threat - Math.floor(Math.random()*5));
+        log(`Lay low. Health +${heal}.`);
+    }
+    advanceTime(1); randomEvent(); hitmanProgress(); updateStatus(); checkEnd();
+}
+
+function scavenge() {
+    let r = Math.random();
+    if(r<0.25) { 
+        let cash = 10000; player.money+=cash; player.inventory.push("cash_stash"); 
+        log(`Found small cash stash: $${cash}.`);
+    } else if(r<0.6) { 
+        player.threat = Math.min(100, player.threat + Math.floor(Math.random()*8)+3);
+        log("Made noise but found nothing. Threat increased.");
+    } else {
+        player.inventory.push("lead"); log("Found a small lead.");
+    }
+    advanceTime(1); randomEvent(); hitmanProgress(); updateStatus(); checkEnd();
+}
+
+function buyInfo() {
+    let spend = Math.min(50000, player.money);
+    if(spend<5000) { log("Too little money. Informant declines."); return; }
+    let pack = prompt("Choose package: small/medium/large");
+    let benefit=0;
+    if(pack=="small") { spend=5000; benefit=0.15; }
+    else if(pack=="medium") { spend=20000; benefit=0.45; }
+    else { spend=spend; benefit=0.9; }
+    if(player.money<spend) { log("Can't afford."); return; }
+    player.money -= spend;
+    if(Math.random()<benefit) { log("Informant delivers useful intel."); player.inventory.push("intel"); player.threat = Math.max(0, player.threat - (Math.floor(Math.random()*14)+5)); }
+    else { log("Informant fails. Threat may rise."); player.threat = Math.min(100, player.threat + Math.floor(Math.random()*6)+1); }
+    advanceTime(1); randomEvent(); hitmanProgress(); updateStatus(); checkEnd();
+}
+
+function checkStatus() { updateStatus(); }
+
+function checkEnd() {
+    if(player.alive && player.hour>=TOTAL_HOURS) {
+        log("24 hours passed. You survived!");
+        alert("Game over: You survived!");
+        resetGame();
+    }
+    else if(!player.alive) {
+        alert("Game over: You died!");
+        resetGame();
+    }
+}
+
+function resetGame() {
+    if(confirm("Play again?")) {
+        player = {health:100,money:350000,threat:50,hour:0,location:"Apartment",inventory:[],alive:true};
+        updateStatus();
+        log("New game started.");
+    }
+}
+
+updateStatus();
+log("Game started. Survive the hitman for 24 hours!");
+</script>
+
+</body>
+</html>
